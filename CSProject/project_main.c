@@ -1,5 +1,6 @@
 /* C Standard library */
 #include <stdio.h>
+#include <math.h>
 
 /* XDCtools files */
 #include <xdc/std.h>
@@ -19,6 +20,9 @@
 /* Board Header files */
 #include "Board.h"
 #include "sensors/opt3001.h"
+#include "sensors/mpu9250.h"
+
+#define PI 3.14159265
 
 /* Task */
 #define STACKSIZE 2048
@@ -29,8 +33,12 @@ Char uartTaskStack[STACKSIZE];
 enum state { WAITING=1, DATA_READY };
 enum state programState = WAITING;
 
-// Global variable for ambient light
+// Global variable for opt3001 data
 double ambientLight = -1000.0;
+
+// Global variables for MPU9250 data
+float ax, ay, az, gx, gy, gz;
+float roll, pitch;
 
 // Pins RTOS-variables and configuration
 static PIN_Handle buttonHandle;
@@ -82,9 +90,10 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
 
         // Send sensor data as a string with UART if the state is DATA_READY
         if (programState == DATA_READY) {
-            char str[100];
-            sprintf(str, "%f ", ambientLight);
-            System_printf("Ambient Light: %s\n", str);
+            char str[200];
+            sprintf(str, "Ambient Light: %f\nRoll: %.2f degrees\nPitch: %.2f degrees\nGyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\n",
+                    ambientLight, roll, pitch, gx, gy, gz);
+            System_printf("%s\n", str);
             System_flush();
             UART_write(uart, str, strlen(str));
             programState = WAITING;
@@ -123,18 +132,52 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
         }
 
         // Twice per second, you can modify this
-        Task_sleep(1000000 / Clock_tickPeriod);
+        Task_sleep(500000 / Clock_tickPeriod);
+    }
+}
+
+Void mpuSensorTaskFxn(float ax, float ay, float az, float gx, float gy, float gz) {
+
+    I2C_Handle      i2c;
+    I2C_Params      i2cParams;
+
+    // Open the i2c bus
+    I2C_Params_init(&i2cParams);
+    i2cParams.bitRate = I2C_400kHz;
+
+
+    i2c = I2C_open(Board_I2C_TMP, &i2cParams);
+    if (i2c == NULL) {
+       System_abort("Error Initializing I2C\n");
+    }
+
+    // Setup the MPU9250 sensor for use
+    Task_sleep(100000 / Clock_tickPeriod);
+    mpu9250_setup(&i2c);
+
+    while (1) {
+
+        // Save the sensor value into the global variable and edit state
+        if (programState == WAITING) {
+            mpu9250_get_data(&i2c, &ax, &ay, &az, &gx, &gy, &gz);
+            float roll = atan2(ay, az) * 180.0 / PI;
+            float pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI;
+            programState = DATA_READY;
+        }
+
+        // Twice per second, you can modify this
+        Task_sleep(500000 / Clock_tickPeriod);
     }
 }
 
 Int main(void) {
-
-
     // Task variables
     Task_Handle sensorTaskHandle;
     Task_Params sensorTaskParams;
     Task_Handle uartTaskHandle;
     Task_Params uartTaskParams;
+    Task_Handle mpuSensorTaskHandle;
+    Task_Params mpuSensorTaskParams;
 
     // Initialize board
     Board_initGeneral();
@@ -164,7 +207,7 @@ Int main(void) {
        System_abort("Error registering button callback function");
     }
 
-    /* Task */
+    /* Light sensor task */
     Task_Params_init(&sensorTaskParams);
     sensorTaskParams.stackSize = STACKSIZE;
     sensorTaskParams.stack = &sensorTaskStack;
@@ -174,12 +217,22 @@ Int main(void) {
         System_abort("Task create failed!");
     }
 
+    /* UART task */
     Task_Params_init(&uartTaskParams);
     uartTaskParams.stackSize = STACKSIZE;
     uartTaskParams.stack = &uartTaskStack;
     uartTaskParams.priority=2;
     uartTaskHandle = Task_create(uartTaskFxn, &uartTaskParams, NULL);
     if (uartTaskHandle == NULL) {
+        System_abort("Task create failed!");
+    }
+    /* MPU9250 sensor task */
+    Task_Params_init(&mpuSensorTaskParams);
+    mpuSensorTaskParams.stackSize = STACKSIZE;
+    mpuSensorTaskParams.stack = &sensorTaskStack;
+    mpuSensorTaskParams.priority = 1;
+    mpuSensorTaskHandle = Task_create(mpuSensorTaskFxn, &mpuSensorTaskParams, NULL);
+    if (mpuSensorTaskHandle == NULL) {
         System_abort("Task create failed!");
     }
 

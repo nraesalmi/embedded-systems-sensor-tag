@@ -496,28 +496,27 @@ void MPU9250SelfTest(float * destination) // Should return percent deviation fro
 /**************** JTKJ: DO NOT MODIFY ANYTHING ABOVE THIS LINE ****************/
 
 void mpu9250_get_data(I2C_Handle *i2c, float *ax, float *ay, float *az, float *gx, float *gy, float *gz) {
+    uint8_t rawData[14]; // Register data
 
-	uint8_t rawData[14]; // Register data
+    // Read register values into array rawData
+    readByte(ACCEL_XOUT_H, 14, rawData);
 
-   	// Read register values into array rawData
-	readByte( ACCEL_XOUT_H, 14, rawData);
+    // Convert the 8-bit values (the _h and _l registers) in the array rawData into 16-bit values
+    int16_t nx = (int16_t)(((int16_t)rawData[0] << 8) | rawData[1]);
+    int16_t ny = (int16_t)(((int16_t)rawData[2] << 8) | rawData[3]);
+    int16_t nz = (int16_t)(((int16_t)rawData[4] << 8) | rawData[5]);
+    int16_t mx = (int16_t)(((int16_t)rawData[8] << 8) | rawData[9]);
+    int16_t my = (int16_t)(((int16_t)rawData[10] << 8) | rawData[11]);
+    int16_t mz = (int16_t)(((int16_t)rawData[12] << 8) | rawData[13]);
 
-	// JTKJ: Convert the 8-bit values (the _h and _l registers) in the array rawData into 16-bit values
-	// int16_t nx = ...
-	// int16_t ny = ...
-	// int16_t nz = ...
-	// int16_t mx = ...
-	// int16_t my = ...
-	// int16_t mz = ...
-	
-	// JTKJ: Convert the 16-bit register values into g 
-	//       Each nx, ny and nz below is represents the 16-bit values for each axis separately
-	// *ax = (float)nx*aRes - accelBias[0];
-	// *ay = (float)ny*aRes - accelBias[1];
-	// *az = (float)nz*aRes - accelBias[2];
+    // Convert the 16-bit register values into g
+    // Each nx, ny and nz below represents the 16-bit values for each axis separately
+    *ax = (float)nx * aRes - accelBias[0];
+    *ay = (float)ny * aRes - accelBias[1];
+    *az = (float)nz * aRes - accelBias[2];
 
-	// JTKJ: Convert g values mx, my, mz into degrees per second
-	// *gx = (float)mx*gRes;
-	// *gy = (float)my*gRes;
-	// *gz = (float)mz*gRes;
+    // Convert g values mx, my, mz into degrees per second
+    *gx = (float)mx * gRes;
+    *gy = (float)my * gRes;
+    *gz = (float)mz * gRes;
 }
