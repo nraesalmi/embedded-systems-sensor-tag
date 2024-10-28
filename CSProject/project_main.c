@@ -16,6 +16,8 @@
 #include <ti/drivers/Power.h>
 #include <ti/drivers/power/PowerCC26XX.h>
 #include <ti/drivers/UART.h>
+#include <ti/drivers/i2c/I2CCC26XX.h>
+
 
 /* Board Header files */
 #include "Board.h"
@@ -27,6 +29,7 @@
 /* Task */
 #define STACKSIZE 2048
 Char sensorTaskStack[STACKSIZE];
+Char mpuTaskStack[STACKSIZE];
 Char uartTaskStack[STACKSIZE];
 
 // Definition of the state machine
@@ -45,7 +48,16 @@ static PIN_Handle buttonHandle;
 static PIN_State buttonState;
 static PIN_Handle ledHandle;
 static PIN_State ledState;
+static PIN_Handle hMpuPin;
+static PIN_State  MpuPinState;
 
+// MPU power pin
+static PIN_Config MpuPinConfig[] = {
+    Board_MPU_POWER  | PIN_GPIO_OUTPUT_EN | PIN_GPIO_HIGH | PIN_PUSHPULL | PIN_DRVSTR_MAX,
+    PIN_TERMINATE
+};
+
+//Configs
 PIN_Config buttonConfig[] = {
    Board_BUTTON0  | PIN_INPUT_EN | PIN_PULLUP | PIN_IRQ_NEGEDGE,
    PIN_TERMINATE // The configuration table is always terminated with this constant
@@ -54,6 +66,11 @@ PIN_Config buttonConfig[] = {
 PIN_Config ledConfig[] = {
    Board_LED0 | PIN_GPIO_OUTPUT_EN | PIN_GPIO_LOW | PIN_PUSHPULL | PIN_DRVSTR_MAX,
    PIN_TERMINATE // The configuration table is always terminated with this constant
+};
+
+static const I2CCC26XX_I2CPinCfg i2cMPUCfg = {
+    .pinSDA = Board_I2C0_SDA1,
+    .pinSCL = Board_I2C0_SCL1
 };
 
 void buttonFxn(PIN_Handle handle, PIN_Id pinId) {
@@ -136,19 +153,29 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
     }
 }
 
-Void mpuSensorTaskFxn(float ax, float ay, float az, float gx, float gy, float gz) {
+Void mpuSensorTaskFxn(UArg arg0, UArg arg1) {
 
+    float ax, ay, az, gx, gy, gz;
     I2C_Handle      i2c;
     I2C_Params      i2cParams;
 
     // Open the i2c bus
     I2C_Params_init(&i2cParams);
     i2cParams.bitRate = I2C_400kHz;
+    i2cParams.custom = (uintptr_t)&i2cMPUCfg;
+
+    // MPU power on
+    PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_ON);
+
+    // Wait 100ms for the MPU sensor to power up
+    Task_sleep(100000 / Clock_tickPeriod);
+    System_printf("MPU9250: Power ON\n");
+    System_flush();
 
 
-    i2c = I2C_open(Board_I2C_TMP, &i2cParams);
+    i2c = I2C_open(Board_I2C0, &i2cParams);
     if (i2c == NULL) {
-       System_abort("Error Initializing I2C\n");
+       System_abort("Error Initializing I2C for MPU\n");
     }
 
     // Setup the MPU9250 sensor for use
@@ -162,6 +189,7 @@ Void mpuSensorTaskFxn(float ax, float ay, float az, float gx, float gy, float gz
             mpu9250_get_data(&i2c, &ax, &ay, &az, &gx, &gy, &gz);
             float roll = atan2(ay, az) * 180.0 / PI;
             float pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI;
+            System_printf("%f %f", roll, pitch);
             programState = DATA_READY;
         }
 
@@ -187,6 +215,12 @@ Int main(void) {
 
     // Initialize UART
     Board_initUART();
+
+    // Open MPU power pin
+    hMpuPin = PIN_open(&MpuPinState, MpuPinConfig);
+    if (hMpuPin == NULL) {
+        System_abort("Pin open failed!");
+    }
 
     // Open the button and led pins
     // Register interrupt handler for button
@@ -229,7 +263,7 @@ Int main(void) {
     /* MPU9250 sensor task */
     Task_Params_init(&mpuSensorTaskParams);
     mpuSensorTaskParams.stackSize = STACKSIZE;
-    mpuSensorTaskParams.stack = &sensorTaskStack;
+    mpuSensorTaskParams.stack = &mpuTaskStack;
     mpuSensorTaskParams.priority = 1;
     mpuSensorTaskHandle = Task_create(mpuSensorTaskFxn, &mpuSensorTaskParams, NULL);
     if (mpuSensorTaskHandle == NULL) {
