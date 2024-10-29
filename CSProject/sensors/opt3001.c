@@ -90,7 +90,7 @@ double opt3001_get_data(I2C_Handle *i2c) {
 		if (I2C_transfer(*i2c, &i2cMessage)) {
 
 	        // Conversion from register value to lux
-		    uint16_t reg = (rxBuffer[0] << 8) | txBuffer[1];
+		    uint16_t reg = (rxBuffer[0] << 8) | rxBuffer[1];
             uint16_t e_bits = (reg >> 12);
             uint16_t r_bits = (reg & 0x0FFF);
             lux = 0.01 * pow(2,e_bits) * r_bits;
