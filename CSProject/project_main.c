@@ -45,7 +45,7 @@ float ax, ay, az, gx, gy, gz;
 float roll, pitch;
 
 // Turn variable for i2c handling
-char turn = 'i';
+char turn = 'j';
 
 // Pins RTOS-variables and configuration
 static PIN_Handle buttonHandle;
@@ -111,14 +111,15 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     while (1) {
 
         // Send sensor data as a string with UART if the state is DATA_READY
-        if (OPTState == DATA_READY & MPUState == DATA_READY) {
+        if (OPTState == DATA_READY && MPUState == DATA_READY) {
             char str[200];
             sprintf(str, "Ambient Light: %f\nRoll: %.2f degrees\nPitch: %.2f degrees\nGyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\n",
                     ambientLight, roll, pitch, gx, gy, gz);
             System_printf("%s\n", str);
             System_flush();
             UART_write(uart, str, strlen(str));
-            OPTState, MPUState = WAITING;
+            OPTState = WAITING;
+            MPUState = WAITING;
         }
         // Twice per second, you can modify this
         Task_sleep(500000 / Clock_tickPeriod);
@@ -130,15 +131,14 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
     I2C_Handle      i2c;
     I2C_Params      i2cParams;
 
+    // Open the i2c bus
+    I2C_Params_init(&i2cParams);
+    i2cParams.bitRate = I2C_400kHz;
+
     while (1) {
 
         // Save the sensor value into the global variable and edit state
         if (OPTState == WAITING && turn == 'i') {
-            // Open the i2c bus
-            I2C_Params_init(&i2cParams);
-            i2cParams.bitRate = I2C_400kHz;
-
-
             i2c = I2C_open(Board_I2C_TMP, &i2cParams);
             if (i2c == NULL) {
                System_abort("Error Initializing I2C\n");
@@ -148,8 +148,7 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
             Task_sleep(100000 / Clock_tickPeriod);
             opt3001_setup(&i2c);
 
-            double data = opt3001_get_data(&i2c);
-            ambientLight = data;
+            ambientLight = opt3001_get_data(&i2c);
             OPTState = DATA_READY;
             I2C_close(i2c);
             turn = 'j';
@@ -171,18 +170,18 @@ Void mpuSensorTaskFxn(UArg arg0, UArg arg1) {
     i2cMPUParams.bitRate = I2C_400kHz;
     i2cMPUParams.custom = (uintptr_t)&i2cMPUCfg;
 
-    // MPU power on
-    PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_ON);
-
-    // Wait 100ms for the MPU sensor to power up
-    Task_sleep(100000 / Clock_tickPeriod);
-    System_printf("MPU9250: Power ON\n");
-    System_flush();
-
     while (1) {
 
         // Save the sensor value into the global variable and edit state
-        if (MPUState == WAITING & turn == 'j') {
+        if (MPUState == WAITING && turn == 'j') {
+            // MPU power on
+            PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_ON);
+
+            // Wait 100ms for the MPU sensor to power up
+            Task_sleep(100000 / Clock_tickPeriod);
+            System_printf("MPU9250: Power ON\n");
+            System_flush();
+
             // Open MPU i2c
             i2cMPU = I2C_open(Board_I2C, &i2cMPUParams);
             if (i2cMPU == NULL) {
@@ -192,20 +191,18 @@ Void mpuSensorTaskFxn(UArg arg0, UArg arg1) {
             // Setup the MPU9250 sensor for use
             Task_sleep(100000 / Clock_tickPeriod);
             mpu9250_setup(&i2cMPU);
-
             mpu9250_get_data(&i2cMPU, &ax, &ay, &az, &gx, &gy, &gz);
             roll = atan2(ay, az) * 180.0 / PI;
             pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI;
-
-            System_printf("%f %f", roll, pitch);
             MPUState = DATA_READY;
 
             I2C_close(i2cMPU);
+            PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_OFF);
             turn = 'i';
         }
 
         // Twice per second, you can modify this
-        Task_sleep(500000 / Clock_tickPeriod);
+        Task_sleep(1000000 / Clock_tickPeriod);
     }
 }
 
