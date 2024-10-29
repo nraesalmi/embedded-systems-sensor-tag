@@ -34,7 +34,8 @@ Char uartTaskStack[STACKSIZE];
 
 // Definition of the state machine
 enum state { WAITING=1, DATA_READY };
-enum state programState = WAITING;
+enum state OPTState = WAITING;
+enum state MPUState = WAITING;
 
 // Global variable for opt3001 data
 double ambientLight = -1000.0;
@@ -42,6 +43,9 @@ double ambientLight = -1000.0;
 // Global variables for MPU9250 data
 float ax, ay, az, gx, gy, gz;
 float roll, pitch;
+
+// Turn variable for i2c handling
+char turn = 'i';
 
 // Pins RTOS-variables and configuration
 static PIN_Handle buttonHandle;
@@ -68,6 +72,7 @@ PIN_Config ledConfig[] = {
    PIN_TERMINATE // The configuration table is always terminated with this constant
 };
 
+// MPU I2C interface
 static const I2CCC26XX_I2CPinCfg i2cMPUCfg = {
     .pinSDA = Board_I2C0_SDA1,
     .pinSCL = Board_I2C0_SCL1
@@ -106,14 +111,14 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     while (1) {
 
         // Send sensor data as a string with UART if the state is DATA_READY
-        if (programState == DATA_READY) {
+        if (OPTState == DATA_READY & MPUState == DATA_READY) {
             char str[200];
             sprintf(str, "Ambient Light: %f\nRoll: %.2f degrees\nPitch: %.2f degrees\nGyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\n",
                     ambientLight, roll, pitch, gx, gy, gz);
             System_printf("%s\n", str);
             System_flush();
             UART_write(uart, str, strlen(str));
-            programState = WAITING;
+            OPTState, MPUState = WAITING;
         }
         // Twice per second, you can modify this
         Task_sleep(500000 / Clock_tickPeriod);
@@ -125,27 +130,30 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
     I2C_Handle      i2c;
     I2C_Params      i2cParams;
 
-    // Open the i2c bus
-    I2C_Params_init(&i2cParams);
-    i2cParams.bitRate = I2C_400kHz;
-
-
-    i2c = I2C_open(Board_I2C_TMP, &i2cParams);
-    if (i2c == NULL) {
-       System_abort("Error Initializing I2C\n");
-    }
-
-    // Setup the OPT3001 sensor for use
-    Task_sleep(100000 / Clock_tickPeriod);
-    opt3001_setup(&i2c);
-
     while (1) {
 
         // Save the sensor value into the global variable and edit state
-        if (programState == WAITING) {
+        if (OPTState == WAITING && turn == 'i') {
+            // Open the i2c bus
+            I2C_Params_init(&i2cParams);
+            i2cParams.bitRate = I2C_400kHz;
+
+
+            i2c = I2C_open(Board_I2C_TMP, &i2cParams);
+            if (i2c == NULL) {
+               System_abort("Error Initializing I2C\n");
+            }
+
+            // Setup the OPT3001 sensor for use
+            Task_sleep(100000 / Clock_tickPeriod);
+            opt3001_setup(&i2c);
+
             double data = opt3001_get_data(&i2c);
             ambientLight = data;
-            programState = DATA_READY;
+            OPTState = DATA_READY;
+            I2C_close(i2c);
+            turn = 'j';
+
         }
 
         // Twice per second, you can modify this
@@ -155,14 +163,13 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
 
 Void mpuSensorTaskFxn(UArg arg0, UArg arg1) {
 
-    float ax, ay, az, gx, gy, gz;
-    I2C_Handle      i2c;
-    I2C_Params      i2cParams;
+    I2C_Handle      i2cMPU;
+    I2C_Params      i2cMPUParams;
 
     // Open the i2c bus
-    I2C_Params_init(&i2cParams);
-    i2cParams.bitRate = I2C_400kHz;
-    i2cParams.custom = (uintptr_t)&i2cMPUCfg;
+    I2C_Params_init(&i2cMPUParams);
+    i2cMPUParams.bitRate = I2C_400kHz;
+    i2cMPUParams.custom = (uintptr_t)&i2cMPUCfg;
 
     // MPU power on
     PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_ON);
@@ -172,25 +179,29 @@ Void mpuSensorTaskFxn(UArg arg0, UArg arg1) {
     System_printf("MPU9250: Power ON\n");
     System_flush();
 
-
-    i2c = I2C_open(Board_I2C0, &i2cParams);
-    if (i2c == NULL) {
-       System_abort("Error Initializing I2C for MPU\n");
-    }
-
-    // Setup the MPU9250 sensor for use
-    Task_sleep(100000 / Clock_tickPeriod);
-    mpu9250_setup(&i2c);
-
     while (1) {
 
         // Save the sensor value into the global variable and edit state
-        if (programState == WAITING) {
-            mpu9250_get_data(&i2c, &ax, &ay, &az, &gx, &gy, &gz);
-            float roll = atan2(ay, az) * 180.0 / PI;
-            float pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI;
+        if (MPUState == WAITING & turn == 'j') {
+            // Open MPU i2c
+            i2cMPU = I2C_open(Board_I2C, &i2cMPUParams);
+            if (i2cMPU == NULL) {
+               System_abort("Error Initializing I2C for MPU\n");
+            }
+
+            // Setup the MPU9250 sensor for use
+            Task_sleep(100000 / Clock_tickPeriod);
+            mpu9250_setup(&i2cMPU);
+
+            mpu9250_get_data(&i2cMPU, &ax, &ay, &az, &gx, &gy, &gz);
+            roll = atan2(ay, az) * 180.0 / PI;
+            pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI;
+
             System_printf("%f %f", roll, pitch);
-            programState = DATA_READY;
+            MPUState = DATA_READY;
+
+            I2C_close(i2cMPU);
+            turn = 'i';
         }
 
         // Twice per second, you can modify this
@@ -241,7 +252,7 @@ Int main(void) {
        System_abort("Error registering button callback function");
     }
 
-    /* Light sensor task */
+    //Light sensor task
     Task_Params_init(&sensorTaskParams);
     sensorTaskParams.stackSize = STACKSIZE;
     sensorTaskParams.stack = &sensorTaskStack;
@@ -260,6 +271,7 @@ Int main(void) {
     if (uartTaskHandle == NULL) {
         System_abort("Task create failed!");
     }
+
     /* MPU9250 sensor task */
     Task_Params_init(&mpuSensorTaskParams);
     mpuSensorTaskParams.stackSize = STACKSIZE;
