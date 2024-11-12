@@ -37,6 +37,7 @@ enum state { WAITING=1, DATA_READY };
 enum state OPTState = WAITING;
 enum state MPUState = WAITING;
 
+
 // Global variable for opt3001 data
 double ambientLight = -1000.0;
 
@@ -46,6 +47,7 @@ float roll, pitch;
 
 // Turn variable for i2c handling
 char turn = 'j';
+char morseOnOff = '0';
 
 // Pins RTOS-variables and configuration
 static PIN_Handle buttonHandle;
@@ -111,14 +113,24 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     while (1) {
 
         // Send sensor data as a string with UART if the state is DATA_READY
-        if (OPTState == DATA_READY && MPUState == DATA_READY) {
+        if (MPUState == DATA_READY) {
+
             char str[200];
-            sprintf(str, "Ambient Light: %f\r\nRoll: %.2f degrees\r\nPitch: %.2f degrees\r\nGyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\r\n",
-                    ambientLight, roll, pitch, gx, gy, gz);
+            char str1[10];
+//            sprintf(str, "Roll: %.2f degrees\r\nPitch: %.2f degrees\r\n"
+//                    "Gyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\r\n"
+//                    "Accelerometer: ax=%.2f m/s^2, ay=%.2f m/s^2, az=%.2f m/s^2\r\n",
+//                    roll, pitch, gx, gy, gz, ax, ay, az);
+            char morseLetter = sensorListener();
+            if(morseOnOff == '1') {
+                sprintf(str1, "%c\r\n", morseLetter);
+                UART_write(uart, str1, strlen(str1) +1);
+
+            }
             System_printf("%s\n", str);
             System_flush();
-            UART_write(uart, str, strlen(str) +1);
-            OPTState = WAITING;
+//            UART_write(uart, str1, strlen(str1) +1);
+            //OPTState = WAITING;
             MPUState = WAITING;
         }
         // Twice per second, you can modify this
@@ -126,40 +138,39 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     }
 }
 
-Void sensorTaskFxn(UArg arg0, UArg arg1) {
-
-    I2C_Handle      i2c;
-    I2C_Params      i2cParams;
-
-    // Open the i2c bus
-    I2C_Params_init(&i2cParams);
-    i2cParams.bitRate = I2C_400kHz;
-
-    while (1) {
-
-        // Save the sensor value into the global variable and edit state
-        if (OPTState == WAITING && turn == 'i') {
-            i2c = I2C_open(Board_I2C_TMP, &i2cParams);
-            if (i2c == NULL) {
-               System_abort("Error Initializing I2C\n");
-            }
-
-            // Setup the OPT3001 sensor for use
-            //Task_sleep(1000000 / Clock_tickPeriod);
-            opt3001_setup(&i2c);
-            Task_sleep(750000/ Clock_tickPeriod);
-
-            ambientLight = opt3001_get_data(&i2c);
-            OPTState = DATA_READY;
-            I2C_close(i2c);
-            turn = 'j';
-
-        }
-
-        // Twice per second, you can modify this
-        Task_sleep(500000 / Clock_tickPeriod);
-    }
-}
+//Void sensorTaskFxn(UArg arg0, UArg arg1) {
+//
+//    I2C_Handle      i2c;
+//    I2C_Params      i2cParams;
+//
+//    // Open the i2c bus
+//    I2C_Params_init(&i2cParams);
+//    i2cParams.bitRate = I2C_400kHz;
+//
+//    while (1) {
+//
+//        // Save the sensor value into the global variable and edit state
+//        if (OPTState == WAITING && turn == 'i') {
+//            i2c = I2C_open(Board_I2C_TMP, &i2cParams);
+//            if (i2c == NULL) {
+//               System_abort("Error Initializing I2C\n");
+//            }
+//
+//            // Setup the OPT3001 sensor for use
+//            opt3001_setup(&i2c);
+//            Task_sleep(650000/ Clock_tickPeriod);
+//
+//            ambientLight = opt3001_get_data(&i2c);
+//            OPTState = DATA_READY;
+//            I2C_close(i2c);
+//            turn = 'j';
+//
+//        }
+//
+//        // Twice per second, you can modify this
+//        Task_sleep(50000 / Clock_tickPeriod);
+//    }
+//}
 
 Void mpuSensorTaskFxn(UArg arg0, UArg arg1) {
 
@@ -171,40 +182,56 @@ Void mpuSensorTaskFxn(UArg arg0, UArg arg1) {
     i2cMPUParams.bitRate = I2C_400kHz;
     i2cMPUParams.custom = (uintptr_t)&i2cMPUCfg;
 
+    // MPU power on
+    PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_ON);
+
+    // Wait 20ms for the MPU sensor to power up
+    Task_sleep(20000 / Clock_tickPeriod);
+    System_printf("MPU9250: Power ON\n");
+    System_flush();
+
+    // Open MPU i2c
+    i2cMPU = I2C_open(Board_I2C, &i2cMPUParams);
+    if (i2cMPU == NULL) {
+       System_abort("Error Initializing I2C for MPU\n");
+    }
+
+    // Setup the MPU9250 sensor for use
+    Task_sleep(20000 / Clock_tickPeriod);
+    mpu9250_setup(&i2cMPU);
+
     while (1) {
 
         // Save the sensor value into the global variable and edit state
-        if (MPUState == WAITING && turn == 'j') {
-            // MPU power on
-            PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_ON);
+        if (MPUState == WAITING) {
 
-            // Wait 100ms for the MPU sensor to power up
-            Task_sleep(100000 / Clock_tickPeriod);
-            System_printf("MPU9250: Power ON\n");
-            System_flush();
-
-            // Open MPU i2c
-            i2cMPU = I2C_open(Board_I2C, &i2cMPUParams);
-            if (i2cMPU == NULL) {
-               System_abort("Error Initializing I2C for MPU\n");
-            }
-
-            // Setup the MPU9250 sensor for use
-            Task_sleep(100000 / Clock_tickPeriod);
-            mpu9250_setup(&i2cMPU);
             mpu9250_get_data(&i2cMPU, &ax, &ay, &az, &gx, &gy, &gz);
             roll = atan2(ay, az) * 180.0 / PI;
             pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI;
             MPUState = DATA_READY;
 
-            I2C_close(i2cMPU);
-            PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_OFF);
-            turn = 'i';
         }
 
         // Twice per second, you can modify this
-        Task_sleep(1000000 / Clock_tickPeriod);
+        Task_sleep(50000 / Clock_tickPeriod);
     }
+
+    //I2C_close(i2cMPU);
+    //PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_OFF);
+    //turn = 'i';
+}
+
+char sensorListener() {
+    if(roll > 80 && roll < 100) {
+        morseOnOff = '1';
+        return '-';
+    }
+    if(roll < -80 && roll > -100) {
+        morseOnOff = '1';
+        return '.';
+    }
+    morseOnOff = '0';
+    return NULL;
 }
 
 Int main(void) {
@@ -251,14 +278,14 @@ Int main(void) {
     }
 
     //Light sensor task
-    Task_Params_init(&sensorTaskParams);
-    sensorTaskParams.stackSize = STACKSIZE;
-    sensorTaskParams.stack = &sensorTaskStack;
-    sensorTaskParams.priority=1;
-    sensorTaskHandle = Task_create(sensorTaskFxn, &sensorTaskParams, NULL);
-    if (sensorTaskHandle == NULL) {
-        System_abort("Task create failed!");
-    }
+//    Task_Params_init(&sensorTaskParams);
+//    sensorTaskParams.stackSize = STACKSIZE;
+//    sensorTaskParams.stack = &sensorTaskStack;
+//    sensorTaskParams.priority=1;
+//    sensorTaskHandle = Task_create(sensorTaskFxn, &sensorTaskParams, NULL);
+//    if (sensorTaskHandle == NULL) {
+//        System_abort("Task create failed!");
+//    }
 
     /* UART task */
     Task_Params_init(&uartTaskParams);
