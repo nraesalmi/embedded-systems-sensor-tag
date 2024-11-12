@@ -113,11 +113,11 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
         // Send sensor data as a string with UART if the state is DATA_READY
         if (OPTState == DATA_READY && MPUState == DATA_READY) {
             char str[200];
-            sprintf(str, "Ambient Light: %f\nRoll: %.2f degrees\nPitch: %.2f degrees\nGyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\n",
+            sprintf(str, "Ambient Light: %f\r\nRoll: %.2f degrees\r\nPitch: %.2f degrees\r\nGyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\r\n",
                     ambientLight, roll, pitch, gx, gy, gz);
             System_printf("%s\n", str);
             System_flush();
-            UART_write(uart, str, strlen(str));
+            UART_write(uart, str, strlen(str) +1);
             OPTState = WAITING;
             MPUState = WAITING;
         }
@@ -145,8 +145,9 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
             }
 
             // Setup the OPT3001 sensor for use
-            Task_sleep(100000 / Clock_tickPeriod);
+            //Task_sleep(1000000 / Clock_tickPeriod);
             opt3001_setup(&i2c);
+            Task_sleep(750000/ Clock_tickPeriod);
 
             ambientLight = opt3001_get_data(&i2c);
             OPTState = DATA_READY;
