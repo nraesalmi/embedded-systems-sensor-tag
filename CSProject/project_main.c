@@ -47,7 +47,9 @@ float roll, pitch;
 
 // Turn variable for i2c handling
 char turn = 'j';
-char morseOnOff = '0';
+
+char temp = NULL;
+
 
 // Pins RTOS-variables and configuration
 static PIN_Handle buttonHandle;
@@ -111,25 +113,25 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     }
 
     while (1) {
-
         // Send sensor data as a string with UART if the state is DATA_READY
         if (MPUState == DATA_READY) {
-
             char str[200];
             char str1[10];
-//            sprintf(str, "Roll: %.2f degrees\r\nPitch: %.2f degrees\r\n"
-//                    "Gyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\r\n"
-//                    "Accelerometer: ax=%.2f m/s^2, ay=%.2f m/s^2, az=%.2f m/s^2\r\n",
-//                    roll, pitch, gx, gy, gz, ax, ay, az);
-            char morseLetter = sensorListener();
-            if(morseOnOff == '1') {
-                sprintf(str1, "%c\r\n", morseLetter);
-                UART_write(uart, str1, strlen(str1) +1);
 
+            char morseLetter = sensorListener();
+            if(morseLetter != temp) {
+                if(morseLetter) {
+                    sprintf(str1, "%c\r\n", morseLetter);
+                    UART_write(uart, str1, strlen(str1) +1);
+                }
+                temp = morseLetter;
             }
+            sprintf(str, "Roll: %.2f degrees\r\nPitch: %.2f degrees\r\n"
+                                        "Gyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\r\n"
+                                        "Accelerometer: ax=%.2f m/s^2, ay=%.2f m/s^2, az=%.2f m/s^2\r\n",
+                                        roll, pitch, gx, gy, gz, ax, ay, az);
             System_printf("%s\n", str);
             System_flush();
-//            UART_write(uart, str1, strlen(str1) +1);
             //OPTState = WAITING;
             MPUState = WAITING;
         }
@@ -223,14 +225,14 @@ Void mpuSensorTaskFxn(UArg arg0, UArg arg1) {
 
 char sensorListener() {
     if(roll > 80 && roll < 100) {
-        morseOnOff = '1';
         return '-';
     }
     if(roll < -80 && roll > -100) {
-        morseOnOff = '1';
         return '.';
     }
-    morseOnOff = '0';
+    if(az > 1.7 || az < -1.7) {
+        return ' ';
+    }
     return NULL;
 }
 
