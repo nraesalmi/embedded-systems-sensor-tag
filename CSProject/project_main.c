@@ -46,10 +46,12 @@ float roll, pitch;
 
 // Turn variable for i2c handling
 char turn = 'j';
+
+// Most recent received status from sensorListener()
 char temp = NULL;
 
+// Boolean for checking button is pressed to send SOS signal
 bool sendSOS = false;
-
 
 // Pins RTOS-variables and configuration
 static PIN_Handle buttonHandle;
@@ -83,14 +85,13 @@ static const I2CCC26XX_I2CPinCfg i2cMPUCfg = {
 };
 
 void buttonFxn(PIN_Handle handle, PIN_Id pinId) {
+    sendSOS = true; // Send SOS signal
 
     // Blink led on the device
     uint_t pinValue = PIN_getOutputValue(Board_LED0);
     pinValue = !pinValue;
     PIN_setOutputValue(ledHandle, Board_LED0, pinValue);
-    sendSOS = true;
 }
-
 /* Task Functions */
 Void uartTaskFxn(UArg arg0, UArg arg1) {
     // UART connection set up as 9600, 8n1
@@ -111,9 +112,14 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     if (uart == NULL) {
        System_abort("Error opening the UART");
     }
-    char morseLetter = NULL;
-    char SOSchecker = NULL;
+
+    char morseLetter = NULL; // Last value received from MPU sensor
+    char SOSchecker = NULL; // Last sent character
+    char message[100];
+
     while (1) {
+        // sendSOS: First checks if it is needed to put spaces before the SOS signal,
+        //    then use UART to send SOS signal
         if(sendSOS) {
             sendSOS = false;
             if(SOSchecker == '.' || SOSchecker == '-') {
@@ -121,6 +127,7 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
                 sprintf(space, "%c\r\n", ' ');
                 UART_write(uart, space ,strlen(space) + 1);
                 UART_write(uart, space ,strlen(space) + 1);
+                SOSchecker = NULL;
             }
 
             char SOS[15] = {'.', '.', '.', ' ', '-', '-', '-', ' ', '.', '.', '.', ' ', ' '};
@@ -130,7 +137,6 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
                 sprintf(str0, "%c\r\n", SOS[i]);
                 UART_write(uart, str0, strlen(str0) +1);
             }
-
         }
 
         // Send sensor data as a string with UART if the state is DATA_READY
@@ -151,11 +157,17 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
                     "Gyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\n "
                     "Accelerometer: ax=%.2f m/s^2, ay=%.2f m/s^2, az=%.2f m/s^2\n",
                     roll, pitch, gx, gy, gz, ax, ay, az);
-            System_printf("%s\n", str);
+            //System_printf("%s\n", str);
             System_flush();
             //OPTState = WAITING;
             MPUState = WAITING;
         }
+
+        //UART read for reading messages
+
+//        UART_read(uart, &message, sizeof(message));
+//        UART_write(uart, message + '\n', sizeof(message) + 1);
+
         // Twice per second, you can modify this
         Task_sleep(500000 / Clock_tickPeriod);
     }
