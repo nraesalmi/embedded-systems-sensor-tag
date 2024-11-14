@@ -37,7 +37,6 @@ enum state { WAITING=1, DATA_READY };
 enum state OPTState = WAITING;
 enum state MPUState = WAITING;
 
-
 // Global variable for opt3001 data
 double ambientLight = -1000.0;
 
@@ -47,8 +46,9 @@ float roll, pitch;
 
 // Turn variable for i2c handling
 char turn = 'j';
-
 char temp = NULL;
+
+bool sendSOS = false;
 
 
 // Pins RTOS-variables and configuration
@@ -88,11 +88,11 @@ void buttonFxn(PIN_Handle handle, PIN_Id pinId) {
     uint_t pinValue = PIN_getOutputValue(Board_LED0);
     pinValue = !pinValue;
     PIN_setOutputValue(ledHandle, Board_LED0, pinValue);
+    sendSOS = true;
 }
 
 /* Task Functions */
 Void uartTaskFxn(UArg arg0, UArg arg1) {
-
     // UART connection set up as 9600, 8n1
     UART_Handle uart;
     UART_Params uartParams;
@@ -111,25 +111,46 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     if (uart == NULL) {
        System_abort("Error opening the UART");
     }
-
+    char morseLetter = NULL;
+    char SOSchecker = NULL;
     while (1) {
+        if(sendSOS) {
+            sendSOS = false;
+            if(SOSchecker == '.' || SOSchecker == '-') {
+                char space[10];
+                sprintf(space, "%c\r\n", ' ');
+                UART_write(uart, space ,strlen(space) + 1);
+                UART_write(uart, space ,strlen(space) + 1);
+            }
+
+            char SOS[15] = {'.', '.', '.', ' ', '-', '-', '-', ' ', '.', '.', '.', ' ', ' '};
+            int i;
+            char str0[10];
+            for (i = 0; i < strlen(SOS); i++) {
+                sprintf(str0, "%c\r\n", SOS[i]);
+                UART_write(uart, str0, strlen(str0) +1);
+            }
+
+        }
+
         // Send sensor data as a string with UART if the state is DATA_READY
         if (MPUState == DATA_READY) {
             char str[200];
             char str1[10];
 
-            char morseLetter = sensorListener();
+            morseLetter = sensorListener();
             if(morseLetter != temp) {
                 if(morseLetter) {
                     sprintf(str1, "%c\r\n", morseLetter);
                     UART_write(uart, str1, strlen(str1) +1);
+                    SOSchecker = morseLetter;
                 }
                 temp = morseLetter;
             }
-            sprintf(str, "Roll: %.2f degrees\r\nPitch: %.2f degrees\r\n"
-                                        "Gyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\r\n"
-                                        "Accelerometer: ax=%.2f m/s^2, ay=%.2f m/s^2, az=%.2f m/s^2\r\n",
-                                        roll, pitch, gx, gy, gz, ax, ay, az);
+            sprintf(str, "\nRoll: %.2f degrees\nPitch: %.2f degrees\n "
+                    "Gyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\n "
+                    "Accelerometer: ax=%.2f m/s^2, ay=%.2f m/s^2, az=%.2f m/s^2\n",
+                    roll, pitch, gx, gy, gz, ax, ay, az);
             System_printf("%s\n", str);
             System_flush();
             //OPTState = WAITING;
@@ -224,13 +245,13 @@ Void mpuSensorTaskFxn(UArg arg0, UArg arg1) {
 }
 
 char sensorListener() {
-    if(roll > 80 && roll < 100) {
+    if(roll > 75 && roll < 105) {
         return '-';
     }
-    if(roll < -80 && roll > -100) {
+    if(roll < -75 && roll > -105) {
         return '.';
     }
-    if(az > 1.7 || az < -1.7) {
+    if(az > 1.5 || az < -1.5) {
         return ' ';
     }
     return NULL;
