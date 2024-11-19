@@ -23,6 +23,100 @@
 #include "Board.h"
 #include "sensors/opt3001.h"
 #include "sensors/mpu9250.h"
+#include "sensors/buzzer.h"
+
+#define NOTE_B0  31
+#define NOTE_C1  33
+#define NOTE_CS1 35
+#define NOTE_D1  37
+#define NOTE_DS1 39
+#define NOTE_E1  41
+#define NOTE_F1  44
+#define NOTE_FS1 46
+#define NOTE_G1  49
+#define NOTE_GS1 52
+#define NOTE_A1  55
+#define NOTE_AS1 58
+#define NOTE_B1  62
+#define NOTE_C2  65
+#define NOTE_CS2 69
+#define NOTE_D2  73
+#define NOTE_DS2 78
+#define NOTE_E2  82
+#define NOTE_F2  87
+#define NOTE_FS2 93
+#define NOTE_G2  98
+#define NOTE_GS2 104
+#define NOTE_A2  110
+#define NOTE_AS2 117
+#define NOTE_B2  123
+#define NOTE_C3  131
+#define NOTE_CS3 139
+#define NOTE_DB3 139
+#define NOTE_D3  147
+#define NOTE_DS3 156
+#define NOTE_EB3 156
+#define NOTE_E3  165
+#define NOTE_F3  175
+#define NOTE_FS3 185
+#define NOTE_G3  196
+#define NOTE_GS3 208
+#define NOTE_A3  220
+#define NOTE_AS3 233
+#define NOTE_B3  247
+#define NOTE_C4  262
+#define NOTE_CS4 277
+#define NOTE_D4  294
+#define NOTE_DS4 311
+#define NOTE_E4  330
+#define NOTE_F4  349
+#define NOTE_FS4 370
+#define NOTE_G4  392
+#define NOTE_GS4 415
+#define NOTE_A4  440
+#define NOTE_AS4 466
+#define NOTE_B4  494
+#define NOTE_C5  523
+#define NOTE_CS5 554
+#define NOTE_D5  587
+#define NOTE_DS5 622
+#define NOTE_E5  659
+#define NOTE_F5  698
+#define NOTE_FS5 740
+#define NOTE_G5  784
+#define NOTE_GS5 831
+#define NOTE_A5  880
+#define NOTE_AS5 932
+#define NOTE_B5  988
+#define NOTE_C6  1047
+#define NOTE_CS6 1109
+#define NOTE_D6  1175
+#define NOTE_DS6 1245
+#define NOTE_E6  1319
+#define NOTE_F6  1397
+#define NOTE_FS6 1480
+#define NOTE_G6  1568
+#define NOTE_GS6 1661
+#define NOTE_A6  1760
+#define NOTE_AS6 1865
+#define NOTE_B6  1976
+#define NOTE_C7  2093
+#define NOTE_CS7 2217
+#define NOTE_D7  2349
+#define NOTE_DS7 2489
+#define NOTE_E7  2637
+#define NOTE_F7  2794
+#define NOTE_FS7 2960
+#define NOTE_G7  3136
+#define NOTE_GS7 3322
+#define NOTE_A7  3520
+#define NOTE_AS7 3729
+#define NOTE_B7  3951
+#define NOTE_C8  4186
+#define NOTE_CS8 4435
+#define NOTE_D8  4699
+#define NOTE_DS8 4978
+#define REST     0
 
 #define PI 3.14159265
 
@@ -31,6 +125,7 @@
 Char sensorTaskStack[STACKSIZE];
 Char mpuTaskStack[STACKSIZE];
 Char uartTaskStack[STACKSIZE];
+Char buzzerTaskStack[STACKSIZE];
 
 // Definition of the state machine
 enum state { WAITING=1, DATA_READY };
@@ -78,6 +173,13 @@ PIN_Config ledConfig[] = {
    PIN_TERMINATE // The configuration table is always terminated with this constant
 };
 
+static PIN_Handle hBuzzer;
+static PIN_State sBuzzer;
+PIN_Config cBuzzer[] = {
+  Board_BUZZER | PIN_GPIO_OUTPUT_EN | PIN_GPIO_LOW | PIN_PUSHPULL | PIN_DRVSTR_MAX,
+  PIN_TERMINATE
+};
+
 // MPU I2C interface
 static const I2CCC26XX_I2CPinCfg i2cMPUCfg = {
     .pinSDA = Board_I2C0_SDA1,
@@ -91,7 +193,11 @@ void buttonFxn(PIN_Handle handle, PIN_Id pinId) {
     uint_t pinValue = PIN_getOutputValue(Board_LED0);
     pinValue = !pinValue;
     PIN_setOutputValue(ledHandle, Board_LED0, pinValue);
+//    Task_sleep(500000 / Clock_tickPeriod);
+//    pinValue = !pinValue;
+//    PIN_setOutputValue(ledHandle, Board_LED0, pinValue);
 }
+
 /* Task Functions */
 Void uartTaskFxn(UArg arg0, UArg arg1) {
     // UART connection set up as 9600, 8n1
@@ -102,11 +208,13 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     uartParams.writeDataMode = UART_DATA_TEXT;
     uartParams.readDataMode = UART_DATA_TEXT;
     uartParams.readEcho = UART_ECHO_OFF;
-    uartParams.readMode = UART_MODE_BLOCKING;
+    uartParams.readMode = UART_MODE_CALLBACK;
     uartParams.baudRate = 9600; // 9600 baud rate
     uartParams.dataLength = UART_LEN_8; // 8
     uartParams.parityType = UART_PAR_NONE; // n
     uartParams.stopBits = UART_STOP_ONE; // 1
+//    uartParams.writeMode = UART_MODE_CALLBACK;
+//    uartParams.readReturnMode = UART_RETURN_NEWLINE;
 
     uart = UART_open(Board_UART0, &uartParams);
     if (uart == NULL) {
@@ -164,12 +272,55 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
         }
 
         //UART read for reading messages
-
-//        UART_read(uart, &message, sizeof(message));
-//        UART_write(uart, message + '\n', sizeof(message) + 1);
+//        Task_sleep(500000 / Clock_tickPeriod);
+//        UART_read(uart, &message, sizeof(message)+ 1);
+//        Task_sleep(500000 / Clock_tickPeriod);
+//        char test[100];
+//        sprintf(test, "%c\r\n", message);
+//        UART_write(uart, message, sizeof(message) + 1);
 
         // Twice per second, you can modify this
         Task_sleep(500000 / Clock_tickPeriod);
+    }
+}
+
+Void buzzerFxn(UArg arg0, UArg arg1) {
+    // Credit for melody https://github.com/hibit-dev/buzzer/tree/master/src/movies/star_wars
+
+    int melody[] = {
+      NOTE_AS4, NOTE_AS4, NOTE_AS4,
+      NOTE_F5, NOTE_C6,
+      NOTE_AS5, NOTE_A5, NOTE_G5, NOTE_F6, NOTE_C6,
+      NOTE_AS5, NOTE_A5, NOTE_G5, NOTE_F6, NOTE_C6,
+      NOTE_AS5, NOTE_A5, NOTE_AS5, NOTE_G5, NOTE_C5, NOTE_C5, NOTE_C5,
+      NOTE_F5, NOTE_C6,
+      NOTE_AS5, NOTE_A5, NOTE_G5, NOTE_F6, NOTE_C6,
+    };
+
+    int durations[] = {
+      8, 8, 8,
+      2, 2,
+      8, 8, 8, 2, 4,
+      8, 8, 8, 2, 4,
+      8, 8, 8, 2, 8, 8, 8,
+      2, 2,
+      8, 8, 8, 2, 4,
+    };
+    while(1) {
+        if(sendSOS) {
+            buzzerOpen(hBuzzer);
+            int size = sizeof(durations) / sizeof(int);
+            int note;
+              for (note = 0; note < size; note++) {
+                int duration = 1000 / durations[note];
+                buzzerSetFrequency(melody[note]);
+
+                int pauseBetweenNotes = duration * 1.30;
+                Task_sleep(pauseBetweenNotes*100);
+              }
+            buzzerClose();
+        }
+    Task_sleep(10000 / Clock_tickPeriod);
     }
 }
 
@@ -277,6 +428,8 @@ Int main(void) {
     Task_Params uartTaskParams;
     Task_Handle mpuSensorTaskHandle;
     Task_Params mpuSensorTaskParams;
+    Task_Handle buzzerTaskHandle;
+    Task_Params buzzerTaskParams;
 
     // Initialize board
     Board_initGeneral();
@@ -299,6 +452,12 @@ Int main(void) {
     ledHandle = PIN_open(&ledState, ledConfig);
     if (!ledHandle) {
        System_abort("Error initializing LED pin\n");
+    }
+
+    //Open buzzer pins
+    hBuzzer = PIN_open(&sBuzzer, cBuzzer);
+    if (hBuzzer == NULL) {
+        System_abort("Pin open failed!");
     }
 
     // Initialize the button in the program
@@ -339,6 +498,16 @@ Int main(void) {
     mpuSensorTaskParams.priority = 1;
     mpuSensorTaskHandle = Task_create(mpuSensorTaskFxn, &mpuSensorTaskParams, NULL);
     if (mpuSensorTaskHandle == NULL) {
+        System_abort("Task create failed!");
+    }
+
+    /* Buzzer task */
+    Task_Params_init(&buzzerTaskParams);
+    buzzerTaskParams.stackSize = STACKSIZE;
+    buzzerTaskParams.stack = &buzzerTaskStack;
+    buzzerTaskParams.priority=1;
+    buzzerTaskHandle = Task_create(buzzerFxn, &buzzerTaskParams, NULL);
+    if (buzzerTaskHandle == NULL) {
         System_abort("Task create failed!");
     }
 
