@@ -126,6 +126,7 @@ Char sensorTaskStack[STACKSIZE];
 Char mpuTaskStack[STACKSIZE];
 Char uartTaskStack[STACKSIZE];
 Char buzzerTaskStack[STACKSIZE];
+Char LEDTaskStack[STACKSIZE];
 
 // Definition of the state machine
 enum state { WAITING=1, DATA_READY };
@@ -147,6 +148,8 @@ char temp = NULL;
 
 // Boolean for checking button is pressed to send SOS signal
 bool sendSOS = false;
+char morseList[15];
+const char SOS[15] = {'.', '.', '.', ' ', '-', '-', '-', ' ', '.', '.', '.', ' ', ' '};
 
 // Pins RTOS-variables and configuration
 static PIN_Handle buttonHandle;
@@ -188,14 +191,6 @@ static const I2CCC26XX_I2CPinCfg i2cMPUCfg = {
 
 void buttonFxn(PIN_Handle handle, PIN_Id pinId) {
     sendSOS = true; // Send SOS signal
-
-    // Blink led on the device
-    uint_t pinValue = PIN_getOutputValue(Board_LED0);
-    pinValue = !pinValue;
-    PIN_setOutputValue(ledHandle, Board_LED0, pinValue);
-//    Task_sleep(500000 / Clock_tickPeriod);
-//    pinValue = !pinValue;
-//    PIN_setOutputValue(ledHandle, Board_LED0, pinValue);
 }
 
 /* Task Functions */
@@ -229,7 +224,7 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
         // sendSOS: First checks if it is needed to put spaces before the SOS signal,
         //    then use UART to send SOS signal
         if(sendSOS) {
-            sendSOS = false;
+
             if(SOSchecker == '.' || SOSchecker == '-') {
                 char space[10];
                 sprintf(space, "%c\r\n", ' ');
@@ -238,13 +233,14 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
                 SOSchecker = NULL;
             }
 
-            char SOS[15] = {'.', '.', '.', ' ', '-', '-', '-', ' ', '.', '.', '.', ' ', ' '};
             int i;
             char str0[10];
             for (i = 0; i < strlen(SOS); i++) {
                 sprintf(str0, "%c\r\n", SOS[i]);
                 UART_write(uart, str0, strlen(str0) +1);
             }
+            strcpy(morseList, SOS);
+            sendSOS = false;
         }
 
         // Send sensor data as a string with UART if the state is DATA_READY
@@ -420,6 +416,30 @@ char sensorListener() {
     return NULL;
 }
 
+Void LEDFxn(UArg arg0, UArg arg1) {
+
+    while(1) {
+        if(morseList[0] == '.' || morseList[0] == '-') {
+            int i;
+            for(i=0;i< sizeof(morseList); i++){
+                if (morseList[i] == ' ') Task_sleep(700000 / Clock_tickPeriod);
+                else {
+                    uint_t pinValue = PIN_getOutputValue(Board_LED0);
+                    pinValue = !pinValue;
+                    PIN_setOutputValue(ledHandle, Board_LED0, pinValue);
+                    if(morseList[i] == '.') Task_sleep(100000 / Clock_tickPeriod);
+                    if(morseList[i] == '-') Task_sleep(300000 / Clock_tickPeriod);
+                    pinValue = !pinValue;
+                    PIN_setOutputValue(ledHandle, Board_LED0, pinValue);
+                    Task_sleep(100000 / Clock_tickPeriod);
+                }
+                morseList[i] = NULL;
+            }
+        }
+        Task_sleep(200000 / Clock_tickPeriod);
+    }
+}
+
 Int main(void) {
     // Task variables
     Task_Handle sensorTaskHandle;
@@ -430,6 +450,8 @@ Int main(void) {
     Task_Params mpuSensorTaskParams;
     Task_Handle buzzerTaskHandle;
     Task_Params buzzerTaskParams;
+    Task_Handle LEDTaskHandle;
+    Task_Params LEDTaskParams;
 
     // Initialize board
     Board_initGeneral();
@@ -508,6 +530,16 @@ Int main(void) {
     buzzerTaskParams.priority=1;
     buzzerTaskHandle = Task_create(buzzerFxn, &buzzerTaskParams, NULL);
     if (buzzerTaskHandle == NULL) {
+        System_abort("Task create failed!");
+    }
+
+    /* LED task */
+    Task_Params_init(&LEDTaskParams);
+    LEDTaskParams.stackSize = STACKSIZE;
+    LEDTaskParams.stack = &LEDTaskStack;
+//    LEDTaskParams.priority=1;
+    LEDTaskHandle = Task_create(LEDFxn, &LEDTaskParams, NULL);
+    if (LEDTaskHandle == NULL) {
         System_abort("Task create failed!");
     }
 
