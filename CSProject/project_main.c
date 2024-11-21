@@ -150,6 +150,7 @@ char temp = NULL;
 bool sendSOS = false;
 char morseList[15];
 const char SOS[15] = {'.', '.', '.', ' ', '-', '-', '-', ' ', '.', '.', '.', ' ', ' '};
+char beepMorse[100];
 
 // Pins RTOS-variables and configuration
 static PIN_Handle buttonHandle;
@@ -209,7 +210,7 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     uartParams.parityType = UART_PAR_NONE; // n
     uartParams.stopBits = UART_STOP_ONE; // 1
 //    uartParams.writeMode = UART_MODE_CALLBACK;
-//    uartParams.readReturnMode = UART_RETURN_NEWLINE;
+    uartParams.readReturnMode = UART_RETURN_FULL;
 
     uart = UART_open(Board_UART0, &uartParams);
     if (uart == NULL) {
@@ -227,7 +228,7 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
 
             if(SOSchecker == '.' || SOSchecker == '-') {
                 char space[10];
-                sprintf(space, "%c\r\n", ' ');
+                sprintf(space, "%c\r\n\0", ' ');
                 UART_write(uart, space ,strlen(space) + 1);
                 UART_write(uart, space ,strlen(space) + 1);
                 SOSchecker = NULL;
@@ -236,7 +237,7 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
             int i;
             char str0[10];
             for (i = 0; i < strlen(SOS); i++) {
-                sprintf(str0, "%c\r\n", SOS[i]);
+                sprintf(str0, "%c\r\n\0", SOS[i]);
                 UART_write(uart, str0, strlen(str0) +1);
             }
             strcpy(morseList, SOS);
@@ -251,7 +252,7 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
             morseLetter = sensorListener();
             if(morseLetter != temp) {
                 if(morseLetter) {
-                    sprintf(str1, "%c\r\n", morseLetter);
+                    sprintf(str1, "%c\r\n\0", morseLetter);
                     UART_write(uart, str1, strlen(str1) +1);
                     SOSchecker = morseLetter;
                 }
@@ -267,13 +268,28 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
             MPUState = WAITING;
         }
 
-        //UART read for reading messages
-//        Task_sleep(500000 / Clock_tickPeriod);
-//        UART_read(uart, &message, sizeof(message)+ 1);
-//        Task_sleep(500000 / Clock_tickPeriod);
-//        char test[100];
-//        sprintf(test, "%c\r\n", message);
-//        UART_write(uart, message, sizeof(message) + 1);
+        // Define a buffer to hold the incoming message
+        unsigned char message[100];
+
+        // UART read for reading messages
+        Task_sleep(500000 / Clock_tickPeriod);
+        unsigned int bytesRead = UART_read(uart, message, sizeof(message) - 1); // Read into the buffer, leaving space for null terminator
+
+        if (bytesRead != 0) {
+            // message[bytesRead] = '\0';
+            strcpy(beepMorse, message);
+            Task_sleep(500000 / Clock_tickPeriod);
+
+//            if(message[0] == '-' || message[0] == '.') {
+//                int i;
+//                char str[10];
+//                for (i = 0; i < strlen(message[i]); i++) {
+//                    sprintf(str, "%c\r\n\0", message[i]);
+//                    UART_write(uart, str, strlen(str)); // Write the received message back
+//                }
+//            }
+        }
+        message[bytesRead] = '\0';
 
         // Twice per second, you can modify this
         Task_sleep(500000 / Clock_tickPeriod);
@@ -312,11 +328,48 @@ Void buzzerFxn(UArg arg0, UArg arg1) {
                 buzzerSetFrequency(melody[note]);
 
                 int pauseBetweenNotes = duration * 1.30;
-                Task_sleep(pauseBetweenNotes*100);
+                Task_sleep(pauseBetweenNotes*1);
               }
             buzzerClose();
         }
-    Task_sleep(10000 / Clock_tickPeriod);
+        Task_sleep(10000 / Clock_tickPeriod);
+
+        if (beepMorse[0] == '.' || beepMorse[0] == '-') {
+            buzzerOpen(hBuzzer);
+            int i;
+            for (i = 0; i < strlen(beepMorse); i++) {
+                System_printf(beepMorse[i]);
+
+                // Handle dash (-)
+                if (beepMorse[i] == '-') {
+                    buzzerSetFrequency(1000);
+                    Task_sleep(300000 / Clock_tickPeriod);
+                    buzzerSetFrequency(0);
+                }
+                // Handle dot (.)
+                else if (beepMorse[i] == '.') {
+                    buzzerSetFrequency(1000);
+                    Task_sleep(100000 / Clock_tickPeriod);
+                    buzzerSetFrequency(0);
+                }
+                // Handle carriage return or newline
+                else if (beepMorse[i] == '\x0d' || beepMorse[i] == '\x0a') {
+                    Task_sleep(100000 / Clock_tickPeriod);
+                }
+                // Break if any other character is encountered
+                else {
+                    break;
+                }
+
+
+            }
+            buzzerClose();
+
+            // Clear beepMorse array once all processing is done
+            for (i = 0; i < strlen(beepMorse); i++) {
+                beepMorse[i] = '\0';
+            }
+        }
     }
 }
 
