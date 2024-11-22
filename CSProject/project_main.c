@@ -68,7 +68,7 @@ bool sendSOS = false;
 bool isBuzzing = false;
 char morseList[15];
 const char SOS[15] = {'.', '.', '.', ' ', '-', '-', '-', ' ', '.', '.', '.', ' ', ' '};
-char beepMorse[100];
+char beepMorse[64];
 
 // Pins RTOS-variables and configuration
 static PIN_Handle buttonHandle;
@@ -124,7 +124,8 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     uartParams.writeDataMode = UART_DATA_TEXT;
     uartParams.readDataMode = UART_DATA_TEXT;
     uartParams.readEcho = UART_ECHO_OFF;
-    uartParams.readMode = UART_MODE_CALLBACK;
+    uartParams.readTimeout = 1;
+    uartParams.readMode = UART_MODE_BLOCKING;
     uartParams.baudRate = 9600; // 9600 baud rate
     uartParams.dataLength = UART_LEN_8; // 8
     uartParams.parityType = UART_PAR_NONE; // n
@@ -139,9 +140,17 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
 
     char morseLetter = NULL; // Last value received from MPU sensor
     char SOSchecker = NULL; // Last sent character
-    char message[100];
+    char message[64];
 
     while (1) {
+        // UART read for reading messages
+        uint8_t bytesRead = UART_read(uart, message, sizeof(message)); // Read into the buffer, leaving space for null terminator
+        if (bytesRead > 0) {
+            strcpy(beepMorse, message);
+            memset(message, 0, sizeof(message));
+        }
+
+
         // sendSOS: First checks if it is needed to put spaces before the SOS signal,
         //    then use UART to send SOS signal
         if(sendSOS) {
@@ -160,8 +169,9 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
                 sprintf(str0, "%c\r\n\0", SOS[i]);
                 UART_write(uart, str0, strlen(str0) +1);
             }
-            strcpy(morseList, SOS);
+            Task_sleep(500000 / Clock_tickPeriod);
             sendSOS = false;
+
         }
 
         // Send sensor data as a string with UART if the state is DATA_READY
@@ -178,23 +188,17 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
                 }
                 temp = morseLetter;
             }
+            sprintf(str, "\nRoll: %.2f degrees\n"
+                    "Gyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\n "
+                    "Accelerometer: ax=%.2f m/s^2, ay=%.2f m/s^2, az=%.2f m/s^2\n",
+                    roll, gx, gy, gz, ax, ay, az);
+            System_printf("%s\n", str);
             System_flush();
+
             MPUState = WAITING;
         }
 
-        // Define a buffer to hold the incoming message
-        unsigned char message[100];
-        char echo_msg[100];
-        // UART read for reading messages
-        Task_sleep(500000 / Clock_tickPeriod);
-        uint8_t bytesRead = UART_read(uart, message, sizeof(message) - 1); // Read into the buffer, leaving space for null terminator
-        sprintf(echo_msg, "%c\r\n\0", message);
-        if (!isBuzzing) {
-            // message[bytesRead] = '\0';
-            strcpy(beepMorse, message);
-            Task_sleep(500000 / Clock_tickPeriod);
-            //memset(message, 0, sizeof(message));
-        }
+
 
         // Twice per second, you can modify this
         Task_sleep(500000 / Clock_tickPeriod);
@@ -225,6 +229,7 @@ Void buzzerFxn(UArg arg0, UArg arg1) {
     };
     while(1) {
         if(sendSOS) {
+            strcpy(morseList, SOS);
             buzzerOpen(hBuzzer);
             int size = sizeof(durations) / sizeof(int);
             int note;
@@ -233,14 +238,12 @@ Void buzzerFxn(UArg arg0, UArg arg1) {
                 buzzerSetFrequency(melody[note]);
 
                 int pauseBetweenNotes = duration * 1.30;
-                Task_sleep(pauseBetweenNotes*10);
+                Task_sleep(pauseBetweenNotes*100);
               }
             buzzerClose();
         }
-        Task_sleep(10000 / Clock_tickPeriod);
 
         if (beepMorse[0] == '.' || beepMorse[0] == '-') {
-            isBuzzing = true;
 
             int i;
             for (i = 0; i < strlen(beepMorse); i++) {
@@ -261,7 +264,7 @@ Void buzzerFxn(UArg arg0, UArg arg1) {
                 }
                 // Handle carriage return or newline
                 else if (beepMorse[i] == '\x0d' || beepMorse[i] == '\x0a') {
-                    Task_sleep(100000 / Clock_tickPeriod);
+                    Task_sleep(50000 / Clock_tickPeriod);
                 }
                 // Break if any other character is encountered
                 else {
@@ -270,7 +273,6 @@ Void buzzerFxn(UArg arg0, UArg arg1) {
                 buzzerClose();
 
             }
-            isBuzzing = false;
 
             // Clear beepMorse array once all processing is done
             for (i = 0; i < strlen(beepMorse); i++) {
@@ -363,13 +365,13 @@ Void mpuSensorTaskFxn(UArg arg0, UArg arg1) {
 }
 
 char sensorListener() {
-    if(roll > 75 && roll < 105) {
+    if(roll > 60 && roll < 120) {
         return '-';
     }
-    if(roll < -75 && roll > -105) {
+    if(roll < -60 && roll > -120) {
         return '.';
     }
-    if(az > 1.5 || az < -1.5) {
+    if(az > 1.25 || az < -1.25) {
         return ' ';
     }
     return NULL;
@@ -476,7 +478,7 @@ Int main(void) {
     Task_Params_init(&mpuSensorTaskParams);
     mpuSensorTaskParams.stackSize = STACKSIZE;
     mpuSensorTaskParams.stack = &mpuTaskStack;
-    mpuSensorTaskParams.priority = 1;
+    mpuSensorTaskParams.priority = 3;
     mpuSensorTaskHandle = Task_create(mpuSensorTaskFxn, &mpuSensorTaskParams, NULL);
     if (mpuSensorTaskHandle == NULL) {
         System_abort("Task create failed!");
@@ -496,7 +498,7 @@ Int main(void) {
     Task_Params_init(&LEDTaskParams);
     LEDTaskParams.stackSize = STACKSIZE;
     LEDTaskParams.stack = &LEDTaskStack;
-//    LEDTaskParams.priority=1;
+    LEDTaskParams.priority=1;
     LEDTaskHandle = Task_create(LEDFxn, &LEDTaskParams, NULL);
     if (LEDTaskHandle == NULL) {
         System_abort("Task create failed!");
