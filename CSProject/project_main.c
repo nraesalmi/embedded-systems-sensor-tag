@@ -50,24 +50,23 @@ enum state { WAITING=1, DATA_READY };
 enum state OPTState = WAITING;
 enum state MPUState = WAITING;
 
-// Global variable for opt3001 data
-double ambientLight = -1000.0;
-
 // Global variables for MPU9250 data
 float ax, ay, az, gx, gy, gz;
 float roll;
-
-// Turn variable for i2c handling
-char turn = 'j';
 
 // Most recent received status from sensorListener()
 char temp = NULL;
 
 // Boolean for checking button is pressed to send SOS signal
 bool sendSOS = false;
-bool isBuzzing = false;
+
+// Morse list variable to store the list of morse character used for LED and printing to terminal
 char morseList[15];
+
+// The predefined list of characters that represent SOS message
 const char SOS[15] = {'.', '.', '.', ' ', '-', '-', '-', ' ', '.', '.', '.', ' ', ' '};
+
+// Buzzer buffer which contains the message from UART read
 char beepMorse[64];
 
 // Pins RTOS-variables and configuration
@@ -108,6 +107,7 @@ static const I2CCC26XX_I2CPinCfg i2cMPUCfg = {
     .pinSCL = Board_I2C0_SCL1
 };
 
+// Function for handling button press, set sendSOS to true which send the SOS message
 void buttonFxn(PIN_Handle handle, PIN_Id pinId) {
     sendSOS = true; // Send SOS signal
 }
@@ -120,17 +120,17 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     UART_Handle uart;
     UART_Params uartParams;
 
+    // Settings for UART
     UART_Params_init(&uartParams);
     uartParams.writeDataMode = UART_DATA_TEXT;
     uartParams.readDataMode = UART_DATA_TEXT;
     uartParams.readEcho = UART_ECHO_OFF;
     uartParams.readTimeout = 1;
     uartParams.readMode = UART_MODE_BLOCKING;
-    uartParams.baudRate = 9600; // 9600 baud rate
-    uartParams.dataLength = UART_LEN_8; // 8
-    uartParams.parityType = UART_PAR_NONE; // n
-    uartParams.stopBits = UART_STOP_ONE; // 1
-//    uartParams.writeMode = UART_MODE_CALLBACK;
+    uartParams.baudRate = 9600; 
+    uartParams.dataLength = UART_LEN_8; 
+    uartParams.parityType = UART_PAR_NONE; 
+    uartParams.stopBits = UART_STOP_ONE; 
     uartParams.readReturnMode = UART_RETURN_FULL;
 
     uart = UART_open(Board_UART0, &uartParams);
@@ -140,7 +140,7 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
 
     char morseLetter = NULL; // Last value received from MPU sensor
     char SOSchecker = NULL; // Last sent character
-    char message[64];
+    char message[64]; // UART read buffer
 
     while (1) {
         // UART read for reading messages
@@ -154,7 +154,6 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
         // sendSOS: First checks if it is needed to put spaces before the SOS signal,
         //    then use UART to send SOS signal
         if(sendSOS) {
-
             if(SOSchecker == '.' || SOSchecker == '-') {
                 char space[10];
                 sprintf(space, "%c\r\n\0", ' ');
@@ -169,9 +168,9 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
                 sprintf(str0, "%c\r\n\0", SOS[i]);
                 UART_write(uart, str0, strlen(str0) +1);
             }
+
             Task_sleep(500000 / Clock_tickPeriod);
             sendSOS = false;
-
         }
 
         // Send sensor data as a string with UART if the state is DATA_READY
@@ -188,6 +187,7 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
                 }
                 temp = morseLetter;
             }
+
             sprintf(str, "\nRoll: %.2f degrees\n"
                     "Gyroscope: gx=%.2f dps, gy=%.2f dps, gz=%.2f dps\n "
                     "Accelerometer: ax=%.2f m/s^2, ay=%.2f m/s^2, az=%.2f m/s^2\n",
@@ -198,13 +198,13 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
             MPUState = WAITING;
         }
 
-
-
-        // Twice per second, you can modify this
+        // 500 milisecond sleep
         Task_sleep(500000 / Clock_tickPeriod);
     }
 }
 
+// Buzzer task function that constantly check if sendSOS is true 
+// and if there is any dot or dash character in the first element of beepMorse.
 Void buzzerFxn(UArg arg0, UArg arg1) {
     // Credit for melody https://github.com/hibit-dev/buzzer/tree/master/src/movies/star_wars
 
@@ -282,42 +282,8 @@ Void buzzerFxn(UArg arg0, UArg arg1) {
     }
 }
 
-//Void sensorTaskFxn(UArg arg0, UArg arg1) {
-//
-//    I2C_Handle      i2c;
-//    I2C_Params      i2cParams;
-//
-//    // Open the i2c bus
-//    I2C_Params_init(&i2cParams);
-//    i2cParams.bitRate = I2C_400kHz;
-//
-//    while (1) {
-//
-//        // Save the sensor value into the global variable and edit state
-//        if (OPTState == WAITING && turn == 'i') {
-//            i2c = I2C_open(Board_I2C_TMP, &i2cParams);
-//            if (i2c == NULL) {
-//               System_abort("Error Initializing I2C\n");
-//            }
-//
-//            // Setup the OPT3001 sensor for use
-//            opt3001_setup(&i2c);
-//            Task_sleep(650000/ Clock_tickPeriod);
-//
-//            ambientLight = opt3001_get_data(&i2c);
-//            OPTState = DATA_READY;
-//            I2C_close(i2c);
-//            turn = 'j';
-//
-//        }
-//
-//        // Twice per second, you can modify this
-//        Task_sleep(50000 / Clock_tickPeriod);
-//    }
-//}
-
+// MPU sensor task for collecting data and store them to global variables
 Void mpuSensorTaskFxn(UArg arg0, UArg arg1) {
-
     I2C_Handle      i2cMPU;
     I2C_Params      i2cMPUParams;
 
@@ -345,25 +311,19 @@ Void mpuSensorTaskFxn(UArg arg0, UArg arg1) {
     mpu9250_setup(&i2cMPU);
 
     while (1) {
-
         // Save the sensor value into the global variable and edit state
         if (MPUState == WAITING) {
-
             mpu9250_get_data(&i2cMPU, &ax, &ay, &az, &gx, &gy, &gz);
             roll = atan2(ay, az) * 180.0 / PI;
             MPUState = DATA_READY;
-
         }
 
-        // Twice per second, you can modify this
+        // The sensor receive data 20 times per second
         Task_sleep(50000 / Clock_tickPeriod);
     }
-
-    //I2C_close(i2cMPU);
-    //PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_OFF);
-    //turn = 'i';
 }
 
+// Function for returning morse character when condition met using sensor data
 char sensorListener() {
     if(roll > 60 && roll < 120) {
         return '-';
@@ -377,8 +337,8 @@ char sensorListener() {
     return NULL;
 }
 
+// LED task function for blinking a received list of characters
 Void LEDFxn(UArg arg0, UArg arg1) {
-
     while(1) {
         if(morseList[0] == '.' || morseList[0] == '-') {
             int i;
@@ -429,9 +389,7 @@ Int main(void) {
         System_abort("Pin open failed!");
     }
 
-    // Open the button and led pins
-    // Register interrupt handler for button
-    // Initialize the LED in the program
+    // Open LED pins and initialize the LED in the program
     ledHandle = PIN_open(&ledState, ledConfig);
     if (!ledHandle) {
        System_abort("Error initializing LED pin\n");
@@ -453,16 +411,6 @@ Int main(void) {
     if (PIN_registerIntCb(buttonHandle, &buttonFxn) != 0) {
        System_abort("Error registering button callback function");
     }
-
-    //Light sensor task
-//    Task_Params_init(&sensorTaskParams);
-//    sensorTaskParams.stackSize = STACKSIZE;
-//    sensorTaskParams.stack = &sensorTaskStack;
-//    sensorTaskParams.priority=1;
-//    sensorTaskHandle = Task_create(sensorTaskFxn, &sensorTaskParams, NULL);
-//    if (sensorTaskHandle == NULL) {
-//        System_abort("Task create failed!");
-//    }
 
     /* UART task */
     Task_Params_init(&uartTaskParams);
