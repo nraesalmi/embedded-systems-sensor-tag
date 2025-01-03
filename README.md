@@ -11,3 +11,8 @@ Features:
 5. Receiving text through uart as morse then using the buzzer to play the corresponding sound. '.' for short beep, '-' for long beep. (Hieu, Huan)
 6. Applying mpu sensor for gathering gyroscope and accelerometer data. (Hieu)
 7. State machine to handle running tasks concurrently (Huan)
+
+## Project demo:
+[![Final project demo video](https://img.youtube.com/vi/rmWje9KjPcA/0.jpg)](https://www.youtube.com/shorts/rmWje9KjPcA)
+
+https://www.youtube.com/shorts/rmWje9KjPcA
