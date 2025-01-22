@@ -2,6 +2,9 @@
 
 This project was developed as part of the **Computer Systems** course. The goal was to create a system that sends and receives Morse code messages using the TI SensorTag cc2650 using UART communication, with additional functionality for SOS signaling through sound and light cues.
 
+### **Project Plan**
+<img src="project_plan.png" width="800" />
+
 ### **Features**
 - **Morse Code Sending via Device Motion**:
   - Rotate the device to the left for a dot (`.`), to the right for a dash (`-`), and up or down for a space (` `).
