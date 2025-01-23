@@ -2,7 +2,13 @@
 
 This project was developed as part of the **Computer Systems** course. The goal was to create a system that sends and receives Morse code messages using the TI SensorTag cc2650 using UART communication, with additional functionality for SOS signaling through sound and light cues.
 
-### **Project Plan**
+### **Contributors**
+- **Niklas Raesalmi (PM)**: Distributed work, scheduled meetings, designed and implemented the SOS button and light blinking functionality and integrated the UART communication.
+- **Hieu Bui**: Worked on detecting device motion using the MPU sensor for Morse code input and integrated the UART communication.
+- **Huan Vo**: Worked on state machine and 'Star Wars' theme sound effect.
+
+
+## **Project Plan**
 <img src="project_plan.png" width="800" />
 
 ### **Features**
@@ -43,13 +49,6 @@ This project was developed as part of the **Computer Systems** course. The goal 
 
 ## Project demo:
 [![Final project demo video](https://img.youtube.com/vi/rmWje9KjPcA/0.jpg)](https://www.youtube.com/shorts/rmWje9KjPcA)
-
----
-
-## **Contributors**
-- **Niklas Raesalmi (PM)**: Distributed work, scheduled meetings, designed and implemented the SOS button and light blinking functionality and integrated the UART communication.
-- **Hieu Bui**: Worked on detecting device motion using the MPU sensor for Morse code input and integrated the UART communication.
-- **Huan Vo**: Worked on state machine and 'Star Wars' theme sound effect.
 
 ---
 
