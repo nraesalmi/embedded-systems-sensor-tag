@@ -47,9 +47,9 @@ This project was developed as part of the **Computer Systems** course. The goal 
 ---
 
 ## **Contributors**
-- **Niklas Raesalmi**: Designed and implemented the SOS button and light blinking functionality.
-- **Hieu Bui**: Worked on detecting device motion using the MPU sensor for Morse code input.
-- **Huan Vo**: Integrated the UART communication and 'Star Wars' theme sound effect.
+- **Niklas Raesalmi (PM)**: Distributed work, scheduled meetings, designed and implemented the SOS button and light blinking functionality and integrated the UART communication.
+- **Hieu Bui**: Worked on detecting device motion using the MPU sensor for Morse code input and integrated the UART communication.
+- **Huan Vo**: Worked on state machine and 'Star Wars' theme sound effect.
 
 ---
 
